@@ -4,6 +4,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+import numpy as np
 
 # ====================== PAGE CONFIG ======================
 st.set_page_config(
@@ -97,19 +99,76 @@ with tab1:
     st.plotly_chart(fig, use_container_width=True)
 
 # ====================== TAB 2: POWER BI ======================
+@st.cache_data
+def load_exec_data():
+    df = pd.read_csv("forecast_results.csv")
+    df["ds"] = pd.to_datetime(df["ds"])
+    df["YearMonth"] = df["ds"].dt.to_period("M").astype(str)
+    return df
+
+exec_df = load_exec_data()
+
+# Create monthly aggregated dataset
+monthly = exec_df.groupby("YearMonth").agg({
+    "y": "sum",
+    "yhat": "sum"
+}).reset_index()
+
+monthly.columns = ["YearMonth", "Sales", "Forecast"]
+
+# Accuracy metrics
+monthly["Error"] = monthly["Sales"] - monthly["Forecast"]
+MAPE = (abs(monthly["Error"] / monthly["Sales"]).replace([np.inf, -np.inf], 0).fillna(0)).mean() * 100
+accuracy = 100 - MAPE
+
+# Dummy category data (since not in your dataset)
+filtered_df = exec_df.copy()
+filtered_df["Category"] = np.random.choice(["A", "B", "C"], len(filtered_df))
 with tab2:
-    st.subheader("📊 Executive Insights – Historical Variance Analysis")
-    st.markdown("This tab embeds a live Power BI report (placeholder URL).")
-    
-    power_bi_url = "https://app.powerbi.com/reportEmbed..."   # Replace later with real link
-    
-    st.components.v1.html(
-        f"""
-        <iframe src="{power_bi_url}" 
-                style="width:100%; height:700px; border:0;" 
-                allowfullscreen></iframe>
-        """,
-        height=720,
-    )
+
+    st.subheader("📊 Financial Forecast Dashboard")
+
+    # KPI Section
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Total Sales", f"{monthly['Sales'].sum():,.0f}")
+    col2.metric("Forecast Sales", f"{monthly['Forecast'].sum():,.0f}")
+    col3.metric("MAPE (%)", f"{MAPE:.2f}")
+    col4.metric("Accuracy (%)", f"{accuracy:.2f}")
+
+    # Line Chart
+    st.subheader("📈 Actual vs Forecast")
+
+    fig = px.line(monthly, x='YearMonth', y=['Sales', 'Forecast'], markers=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Error Chart
+    st.subheader("📊 Error by Category")
+
+    cat = filtered_df.groupby('Category').agg({
+    'y': 'sum',
+    'yhat': 'sum'
+}).reset_index()
+
+    cat.columns = ['Category', 'Sales', 'Forecast']
+    cat['Error'] = cat['Sales'] - cat['Forecast']
+    fig2 = px.bar(cat, x='Category', y='Error', color='Error')
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # Scatter Plot
+    st.subheader("🔍 Forecast vs Actual")
+
+    fig3 = px.scatter(monthly, x='Forecast', y='Sales', size='Sales')
+    st.plotly_chart(fig3, use_container_width=True)
+
+    # Insights
+    st.subheader("🧠 Insights")
+
+    if accuracy > 90:
+        st.success("Forecast is highly accurate.")
+    elif accuracy > 75:
+        st.warning("Forecast is moderately accurate.")
+    else:
+        st.error("Forecast accuracy is low.")
 
 st.caption("Built as a two-file system • Run pipeline first → then this dashboard")
